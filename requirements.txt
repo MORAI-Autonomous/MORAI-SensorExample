@@ -1,0 +1,7 @@
+requests
+numpy
+opencv-python
+pyqt5
+qimage2ndarray
+PyQtDataVisualization
+pynmea2
