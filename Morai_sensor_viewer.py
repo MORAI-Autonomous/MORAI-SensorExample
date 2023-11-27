@@ -368,7 +368,7 @@ class main_window(QtWidgets.QDialog):
             camImg = cv2.resize(camImg,dsize=(400,400))
             qtImg = self.convert_cv_qt(camImg)
             self.CamView.setPixmap(qtImg)
-        except:
+        except Exception as e:
             print(f'updateImg Exception : {e}')
             pass
 

@@ -78,8 +78,9 @@ class IMUConnector:
         raw_data, sender = self.imuClient.recvfrom(65535)
         header = raw_data[0:9].decode()
         if header == '#IMUData$':
+            
             data_length = struct.unpack('i', raw_data[9:13])
-            data = struct.unpack('10d', raw_data[25:105])
+            data = struct.unpack('10d', raw_data[33:113])
             self.imu_data.orientation_x = data[1]
             self.imu_data.orientation_y = data[2]
             self.imu_data.orientation_z = data[3]

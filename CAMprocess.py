@@ -89,19 +89,26 @@ class CAMConnector:
     while True:
       try:
         UnitBlock, sender = self.camClient.recvfrom(65000)
-        UnitIdx = struct.unpack('i',UnitBlock[3:7])[0]
-        UnitSize = struct.unpack('i',UnitBlock[7:11])[0]
+        UnitIdx = struct.unpack('i',UnitBlock[11:15])[0]
+        UnitSize = struct.unpack('i',UnitBlock[15:19])[0]
+        Unitdata = UnitBlock[19:-2]
         UnitTail = UnitBlock[-2:]
 
-        if num_block == UnitIdx:
-          TotalBuffer += UnitBlock[11:(11 + UnitSize)]
-          num_block += 1   
-        if UnitTail == b'EI' and num_block == (UnitIdx + 1):
+        # if num_block == UnitIdx:
+        #   TotalBuffer += UnitBlock[11:(11 + UnitSize)]
+        #   num_block += 1   
+        if UnitTail == b'EI':
+          TotalBuffer+=Unitdata
+
           self.TotalIMG = cv2.imdecode(np.fromstring(TotalBuffer, np.uint8), 1)
           self.img_byte = np.array(cv2.imencode('.jpg', self.TotalIMG)[1]).tostring()                    
           TotalBuffer = b''
           self.recvChk = True
           break
+
+        else:
+          TotalBuffer+=Unitdata
+
 
       except socket.timeout:
         if self.recvChk:
