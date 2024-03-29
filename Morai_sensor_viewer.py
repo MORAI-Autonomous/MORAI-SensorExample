@@ -12,8 +12,8 @@ import qimage2ndarray
 
 from PyQt5 import QtWidgets, uic, QtGui, QtCore
 from PyQt5.QtGui import QColor, QPen, QBrush, QPixmap, QVector3D
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt, QSize, QThread
+from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget 
 from PyQt5.QtDataVisualization import (Q3DCamera, Q3DScatter, Q3DTheme,
                                        QAbstract3DGraph, QAbstract3DSeries, QScatter3DSeries,
                                        QScatterDataItem, QScatterDataProxy )
@@ -22,6 +22,8 @@ from GPSprocess import GPSConnector
 from IMUprocess import IMUConnector
 from CAMprocess import CAMConnector
 from Lidarprocess import LIDARConnector
+
+from multiprocessing import  freeze_support
 
 class NetworkError(Exception):
     pass
@@ -107,7 +109,7 @@ class main_window(QtWidgets.QDialog):
         self.gpsLon = 126.773287
         
         self.ui_timer = QtCore.QTimer(self)
-        self.ui_timer.setInterval(30)  
+        self.ui_timer.setInterval(1000)  
         self.ui_timer.timeout.connect(self.updateUi)
         self.ui_timer.start()
 
@@ -139,7 +141,7 @@ class main_window(QtWidgets.QDialog):
     def connect(self):
         try:
             if not self.Connected:                
-                self.getNetworkConfig()                
+                # self.getNetworkConfig()                
 
                 if self.cameraNetworkType == 'ROS' or self.gpsNetworkType == 'ROS' or self.imuNetworkType =='ROS' or self.lidarNetworkType == 'ROS':
                     import rospy
@@ -155,8 +157,11 @@ class main_window(QtWidgets.QDialog):
                 self.imuManager = IMUConnector(self.imuNetworkType)
                 self.imuManager.connect(self.imuIp, self.imuPort, self.imuTopic)
 
-                self.lidarManager = LIDARConnector(self.lidarNetworkType)
-                self.lidarManager.connect(self.lidarIp, self.lidarPort, self.lidarTopic)
+                self.lidarManager = LIDARConnector()
+                self.lidarManager.connect(self.lidarNetworkType,self.lidarIp,self.lidarPort,self.lidarTopic)
+                
+                
+                # self.lidarManager.connect(self.lidarIp, self.lidarPort, self.lidarTopic)
 
                 #Verify that the connection is valid
                 if not self.cameraManager.connChk or \
@@ -186,8 +191,8 @@ class main_window(QtWidgets.QDialog):
                 else:
                     
                     self.timer = QtCore.QTimer(self)
-                    self.timer.setInterval(30)
-                    self.timer.timeout.connect(self.updateScene)
+                    self.timer.setInterval(100)
+                    self.timer.timeout.connect(self.updateScene) 
                     self.timer.start()
 
                     self.Connected = True
@@ -240,7 +245,7 @@ class main_window(QtWidgets.QDialog):
 
 
     def updateUi(self):
-        self.getNetworkConfig()       
+        self.getNetworkConfig()
         self.setSettingPannel(
             self.cameraNetworkType,
             self.camera_ip_label, self.camera_ip_textedit,
@@ -271,7 +276,7 @@ class main_window(QtWidgets.QDialog):
         )
  
     def updateScene(self):
-        self.mutex.lock()
+        # self.mutex.lock()
         if self.gpsManager.recvChk:
             vehiclePose = self.updateGps()
             
@@ -287,7 +292,7 @@ class main_window(QtWidgets.QDialog):
         if self.lidarManager.recvChk:
             self.updateLidar()
         
-        self.mutex.unlock()
+        # self.mutex.unlock()
 
     def updateGps(self):
         self.gpsLon, self.gpsLat = self.gpsManager.getPose()
@@ -394,12 +399,14 @@ class main_window(QtWidgets.QDialog):
         except Exception as e:
             print(f'updateLidar Exception : {e}')
 
-def main():
+
+    
+if __name__ == "__main__":
+
+    freeze_support()    
     app = QtWidgets.QApplication(sys.argv)
     screen = main_window()
     screen.show()
     app.exec_()
     sys.exit()
-
-if __name__ == "__main__":
-    main()
+    

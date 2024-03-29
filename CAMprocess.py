@@ -94,14 +94,11 @@ class CAMConnector:
         Unitdata = UnitBlock[19:-2]
         UnitTail = UnitBlock[-2:]
 
-        # if num_block == UnitIdx:
-        #   TotalBuffer += UnitBlock[11:(11 + UnitSize)]
-        #   num_block += 1   
         if UnitTail == b'EI':
           TotalBuffer+=Unitdata
 
           self.TotalIMG = cv2.imdecode(np.fromstring(TotalBuffer, np.uint8), 1)
-          self.img_byte = np.array(cv2.imencode('.jpg', self.TotalIMG)[1]).tostring()                    
+          # self.img_byte = np.array(cv2.imencode('.jpg', self.TotalIMG)[1]).tostring()                    
           TotalBuffer = b''
           self.recvChk = True
           break
@@ -122,6 +119,5 @@ class CAMConnector:
       time.sleep(0.01)
 
 
-  def getImg(self):
-    
+  def getImg(self):    
     return self.TotalIMG
