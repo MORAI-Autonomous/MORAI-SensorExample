@@ -24,6 +24,7 @@ from CAMprocess import CAMConnector
 from Lidarprocess import LIDARConnector
 
 from multiprocessing import  freeze_support
+current_path = os.path.dirname(os.path.realpath(__file__))
 
 class NetworkError(Exception):
     pass
@@ -58,7 +59,7 @@ class main_window(QtWidgets.QDialog):
     def __init__(self):
         super(main_window, self).__init__()
         
-        uic.loadUi('form.ui', self)
+        uic.loadUi(os.path.join(current_path, 'form.ui'), self)
         resourcePath = os.path.join(os.path.abspath(os.getcwd()),'resource') + '/'
         
         self.mutex = QtCore.QMutex()

@@ -1,0 +1,7 @@
+requests==2.22.0
+numpy==1.17.4
+opencv-python==4.10.0.84
+pyqt5==5.14.2
+qimage2ndarray==1.10.0
+PyQtDataVisualization==5.14.0
+pynmea2==1.19.0
