@@ -33,21 +33,14 @@ irm https://astral.sh/uv/install.ps1 | iex
 uv --version
 ```
 
-2) Create a virtual environment and install dependencies:
+2) Setup uv:
 ```powershell
-cd src
-uv venv
-uv pip sync requirements.txt
-```
-
-- Optional: activate the venv for your shell
-```powershell
-.\.venv\Scripts\Activate.ps1
+uv init
 ```
 
 3) Run with uv:
 ```powershell
-uv run python src\sensor_example\morai_sensor_viewer.py
+uv run src\sensor_example\morai_sensor_viewer.py
 ```
 
 The main runtime dependencies are listed in `requirements.txt`, but are now superseded by `uv.lock` and `pyproject.toml`:
@@ -68,12 +61,12 @@ python src\sensor_example\morai_sensor_viewer.py
 
 ## Setup (Linux Ubuntu/ROS)
 
-1) Download and build morai_msgs for ROS1
+1) Download and build our custom morai_msgs for ROS1
 
 2) Setup the project in a new install path
 ```
 cd {example install path}/MORAI-SensorExample
-pip install -r src/sensor_example/requirements.txt
+pip install -r requirements.txt
 catkin_make
 source devel/setup.bash
 python3 src/sensor_example/morai_sensor_viewer.py
