@@ -1,0 +1,5 @@
+numpy==1.24.4
+opencv-python==4.11.0.86
+pynmea2==1.19.0
+pyside2==5.15.2.1
+requests==2.32.4

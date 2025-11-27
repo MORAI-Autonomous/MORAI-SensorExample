@@ -1,7 +1,8 @@
 import socket
-from threading import Thread, Event
+from threading import Event, Thread
 
 import pynmea2
+
 
 class GPSConnector:
   def __init__(self, network_type): 
@@ -33,8 +34,8 @@ class GPSConnector:
         print(f'gps_connect :{e}')
         
     else:
+        import rospy
         from morai_msgs.msg import GPSMessage
-        import rospy   
         self.gpsClient = rospy.Subscriber(topic ,GPSMessage, self.gpsCB)
         try:
           rospy.wait_for_message(topic,GPSMessage,timeout=1)

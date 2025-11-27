@@ -1,10 +1,11 @@
 import socket
+import struct
 import time
-from threading import Thread,Event
+from threading import Event, Thread
 
 import cv2
 import numpy as np
-import struct
+
 
 class CAMConnector:
   def __init__(self, network_type):

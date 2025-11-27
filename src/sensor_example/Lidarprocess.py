@@ -1,17 +1,15 @@
 import socket
-import numpy as np
-from threading import Thread, Event
 from multiprocessing import Process, Queue
-from PyQt5.QtCore import QThread, pyqtSignal
+from threading import Event, Thread
+
+import numpy as np
+from PySide2.QtCore import QThread, Signal
 
 
 class LIDARConnector(QThread):
-	finished = pyqtSignal(int,object)
+	finished = Signal(int,object)
 
 	def __init__(self):
-
-		# self.lidar_queue = queue
-
 		self.lidarClient = None    
 		
 		self.connChk = False    
@@ -31,7 +29,6 @@ class LIDARConnector(QThread):
 	def __del__(self):
 		print("lidar_del")
 
-	
 	def connect(self, networktype, host, port, topic):
 		self.networkType = networktype
 
@@ -42,7 +39,6 @@ class LIDARConnector(QThread):
 			self.lidarClient.settimeout(1)
 			self.lidarClient.bind((host,port))
 			
-
 			self.queue = Queue()
 
 			parser_thread = Thread(target=self.data_parser)
@@ -56,18 +52,20 @@ class LIDARConnector(QThread):
 			# precv_mp = Process(target=self.recv_udp_data,args=(self.queue,))
 			# precv_mp.start()
 
-
 			# except Exception as e:        
 			# 	print('lidar_connect : {e}')
 
 		else:
-			import rospy
-			from sensor_msgs.msg import PointCloud2        
-			self.lidarClient = rospy.Subscriber(topic, PointCloud2, self.lidarCB)
 			try:
-				rospy.wait_for_message(topic,PointCloud2,timeout=1)
-			except rospy.exceptions.ROSException:
-				pass
+				import rospy
+				from sensor_msgs.msg import PointCloud2
+				self.lidarClient = rospy.Subscriber(topic, PointCloud2, self.lidarCB)
+				try:
+					rospy.wait_for_message(topic,PointCloud2,timeout=1)
+				except rospy.exceptions.ROSException:
+					pass
+			except ImportError:
+				return
 
 		self.connChk = True
           

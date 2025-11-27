@@ -1,8 +1,7 @@
 import socket
-from threading import Thread, Event
-
-
 import struct
+from threading import Event, Thread
+
 
 class IMUConnector:
   def __init__(self, network_type):
