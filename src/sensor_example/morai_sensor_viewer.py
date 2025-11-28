@@ -27,10 +27,10 @@ class NetworkError(Exception):
 
 
 def getTileNum(lat, lon, zn):
-    latr = lat/180*math.pi
+    lat_radians = lat/180*math.pi
     n = math.pow(2.0,zn)
     posX = (lon + 180)/360*n
-    posY = (1.0 - math.asinh(math.tan(latr))/math.pi)/2*n
+    posY = (1.0 - math.asinh(math.tan(lat_radians))/math.pi)/2*n
     pixX, tileRow = math.modf(posX)
     pixY, tileCol = math.modf(posY)
     pixX = math.floor(pixX*256) + 256
@@ -66,50 +66,38 @@ class MainWindow(QtWidgets.QDialog):
         self.mutex = QtCore.QMutex()
         self.setWindowIcon(QtGui.QIcon(resourcePath+'MORAIicon.png'))
 
-        #Gps,Imu GraphicsScene
+        # Widget 1: Camera view
+        self.ui.CamView.setPixmap(QtGui.QPixmap())
+        self.ui.CamView.resize(400,400)
+
+        # Widget 2: GPS,IMU Map view
         self.mapScene = QtWidgets.QGraphicsScene(self)
         self.ui.MapView.setScene(self.mapScene)
         self.ui.MapView.show()
 
-        #imu arrow
+        # IMU arrow
         self.odomArrow = QtGui.QPixmap(resourcePath+'pin.png')
         self.odomArrow = self.odomArrow.scaled(17, 25, Qt.IgnoreAspectRatio)
 
-        #Cam Label View
-        self.ui.CamView.setPixmap(QtGui.QPixmap())
-        self.ui.CamView.resize(400,400)
-
-        #Lidar 3D Scatter
-        self.lidar_graph = QtDataVisualization.Q3DScatter()
-        serises = QtDataVisualization.QScatter3DSeries()
-        self.lidar_graph.addSeries(serises)
-        self.lidar_graph.setShadowQuality(QtDataVisualization.QAbstract3DGraph.ShadowQualityNone)
-        self.lidar_graph.axisX().setRange(-50,50)
-        self.lidar_graph.axisY().setRange(-50,50)
-        self.lidar_graph.axisZ().setRange(-30,30)
-
-        self.lidar_graph.scene().activeCamera().setZoomLevel(300)
-        self.lidar_graph.scene().activeCamera().setYRotation(-20)
-        self.lidar_graph.activeTheme().setGridEnabled(False)
-        self.lidar_graph.seriesList()[0].setMesh(QtDataVisualization.QAbstract3DSeries.MeshPoint)
-        self.lidar_graph.seriesList()[0].setItemSize(0.025)
-        container = QWidget.createWindowContainer(self.lidar_graph)
-        container.setMaximumSize(QtCore.QSize(400,400))
-
-        hLayout = QHBoxLayout(self.ui.pointcloudWidget)
-        vLayout = QVBoxLayout()
-        hLayout.addWidget(container, 1)
-        hLayout.addLayout(vLayout)
-
-        #tile var
+        # Map tiling
         self.buffMapTile = None
         self.buffCenterPose = None
         self.cachedMapPixmap = None
         self.mapEgoColor = QPen(QColor(255,0,0))
+        self.gpsLat = 0
+        self.gpsLon = 0
 
-        #KR_R_PG_K-City
-        self.gpsLat = 37.229319
-        self.gpsLon = 126.773287
+        # Widget 3: Lidar 3D Scatterplot
+        self.lidar_graph = None
+        self.lidar_container = None
+
+        hLayout = QHBoxLayout(self.ui.pointcloudWidget)
+        vLayout = QVBoxLayout()
+        self.graph_container_layout = hLayout
+        hLayout.addLayout(vLayout)
+        
+        # Initialize Lidar graph with delayed timer after window is shown and stable
+        # QtCore.QTimer.singleShot(500, self.initLidarGraph)
 
         self.ui.camera_comboBox.currentIndexChanged.connect(self.updateUi)
         self.ui.gps_comboBox.currentIndexChanged.connect(self.updateUi)
@@ -119,9 +107,8 @@ class MainWindow(QtWidgets.QDialog):
         # Trigger once to set initial state
         self.updateUi()
 
-        self.Connected = False
+        self.connected = False
         self.ui.ConnectButton.clicked.connect(self.connect)
-        print("DEBUG: MainWindow Init Complete")
 
     def getNetworkConfig(self):
         self.cameraNetworkType = self.ui.camera_comboBox.currentText()
@@ -158,9 +145,7 @@ class MainWindow(QtWidgets.QDialog):
 
     def connect(self):
         try:
-            if not self.Connected:
-                # self.getNetworkConfig()
-
+            if not self.connected:
                 if self.cameraNetworkType == 'ROS' or self.gpsNetworkType == 'ROS' or self.imuNetworkType =='ROS' or self.lidarNetworkType == 'ROS':
                     try:
                         import rospy
@@ -213,11 +198,11 @@ class MainWindow(QtWidgets.QDialog):
                     self.timer.timeout.connect(self.updateScene)
                     self.timer.start()
 
-                    self.Connected = True
-                    self.ConnectButton.setText('Disconnect')
+                    self.connected = True
+                    self.ui.ConnectButton.setText('Disconnect')
 
             else:
-                self.Connected = False
+                self.connected = False
                 self.timer.stop()
                 print('Disconnected')
                 self.ui.ConnectButton.setText('Connect')
@@ -293,7 +278,7 @@ class MainWindow(QtWidgets.QDialog):
         )
 
     def updateScene(self):
-        self.ui.mapScene.clear()
+        self.mapScene.clear()
 
         if self.gpsManager.recvChk:
             vehiclePose = self.updateGps()
@@ -301,7 +286,7 @@ class MainWindow(QtWidgets.QDialog):
             if self.imuManager.recvChk:
                 self.updateImu(vehiclePose)
             else:
-                self.ui.mapScene.addEllipse(vehiclePose[0]-5, vehiclePose[1]-5, 10,10,self.mapEgoColor, \
+                self.mapScene.addEllipse(vehiclePose[0]-5, vehiclePose[1]-5, 10,10,self.mapEgoColor, \
                     QBrush(self.mapEgoColor.color()))
 
         if self.cameraManager.recvChk:
@@ -406,6 +391,8 @@ class MainWindow(QtWidgets.QDialog):
         return QPixmap.fromImage(p)
 
     def updateLidar(self):
+        if self.lidar_graph is None:
+            return
         try:
             x,y,z,_ = self.lidarManager.getLidar()
             dataArray = []
@@ -418,12 +405,57 @@ class MainWindow(QtWidgets.QDialog):
         except Exception as e:
             print(f'updateLidar Exception : {e}')
 
+    def initLidarGraph(self):
+        """Initialize the 3D LIDAR visualization graph."""
+        try:
+            self.lidar_graph = QtDataVisualization.Q3DScatter()
+            
+            series = QtDataVisualization.QScatter3DSeries()
+            self.lidar_graph.addSeries(series)
+            self.lidar_graph.setShadowQuality(QtDataVisualization.QAbstract3DGraph.ShadowQualityNone)
+            self.lidar_graph.setOrthoProjection(False)
+            self.lidar_graph.axisX().setRange(-50,50)
+            self.lidar_graph.axisY().setRange(-50,50)
+            self.lidar_graph.axisZ().setRange(-30,30)
+
+            self.lidar_graph.scene().activeCamera().setZoomLevel(300)
+            self.lidar_graph.scene().activeCamera().setYRotation(-20)
+            self.lidar_graph.activeTheme().setGridEnabled(False)
+            self.lidar_graph.seriesList()[0].setMesh(QtDataVisualization.QAbstract3DSeries.MeshPoint)
+            self.lidar_graph.seriesList()[0].setItemSize(0.025)
+            
+            # Store container as instance variable to prevent garbage collection
+            self.lidar_container = QWidget.createWindowContainer(self.lidar_graph, self)
+            self.lidar_container.setMaximumSize(QtCore.QSize(400,400))
+            
+            # Add to the layout we saved earlier
+            self.graph_container_layout.addWidget(self.lidar_container, 1)
+        except Exception as e:
+            print(f"ERROR: LIDAR 3D visualization failed to initialize: {e}")
+            # Add placeholder on failure
+            placeholder_label = QtWidgets.QLabel("LIDAR 3D View\n(Initialization failed)")
+            placeholder_label.setAlignment(QtCore.Qt.AlignCenter)
+            placeholder_label.setStyleSheet("background-color: #333; color: #ff6b6b; font-size: 12pt;")
+            placeholder_label.setMaximumSize(QtCore.QSize(400,400))
+            self.graph_container_layout.addWidget(placeholder_label, 1)
+
 
 if __name__ == "__main__":
     freeze_support()
+    
+    # Use software rendering to avoid OpenGL crashes with QtDataVisualization
+    os.environ["QT_OPENGL"] = "software"
+    os.environ["QSG_RHI_BACKEND"] = "software"
+    
+    # Enable OpenGL context sharing (required for QtDataVisualization)
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseSoftwareOpenGL)
+
     app = QtWidgets.QApplication(sys.argv)
-    screen = MainWindow()
-    screen.show()
-    print("DEBUG: MainWindow shown")
-    app.exec_()
-    sys.exit()
+    
+    # Create and show main window
+    main_window = MainWindow()
+    main_window.show()
+    
+    # Run the event loop
+    sys.exit(app.exec_())
