@@ -220,9 +220,22 @@ class MainWindow(QtWidgets.QDialog):
             del (self.lidarManager)
 
     def closeEvent(self, event):
+        if self.connected:
+            try:
+                self.timer.stop()
+                if hasattr(self, 'cameraManager'):
+                    self.cameraManager.disconnect()
+                if hasattr(self, 'gpsManager'):
+                    self.gpsManager.disconnect()
+                if hasattr(self, 'imuManager'):
+                    self.imuManager.disconnect()
+                if hasattr(self, 'lidarManager'):
+                    self.lidarManager.disconnect()
+            except Exception as e:
+                print(f'closeEvent cleanup error: {e}')
         super(QtWidgets.QDialog, self).closeEvent(event)
 
-    def setSettingPannel(self,Type,
+    def setSettingPanel(self,Type,
                             ipLabel, ipText,
                             portLabel, portText,
                             topicLabel, topicText,
@@ -248,28 +261,28 @@ class MainWindow(QtWidgets.QDialog):
 
     def updateUi(self):
         self.getNetworkConfig()
-        self.setSettingPannel(
+        self.setSettingPanel(
             self.cameraNetworkType,
             self.ui.camera_ip_label, self.ui.camera_ip_textedit,
             self.ui.camera_port_label, self.ui.camera_port_textedit,
             self.ui.camera_topic_label, self.ui.camera_topic_textedit,
             self.ui.camera_type_label, self.ui.camera_type_textedit
         )
-        self.setSettingPannel(
+        self.setSettingPanel(
             self.gpsNetworkType,
             self.ui.gps_ip_label, self.ui.gps_ip_textedit,
             self.ui.gps_port_label, self.ui.gps_port_textedit,
             self.ui.gps_topic_label, self.ui.gps_topic_textedit,
             self.ui.gps_type_label, self.ui.gps_type_textedit
         )
-        self.setSettingPannel(
+        self.setSettingPanel(
             self.imuNetworkType,
             self.ui.imu_ip_label, self.ui.imu_ip_textedit,
             self.ui.imu_port_label, self.ui.imu_port_textedit,
             self.ui.imu_topic_label, self.ui.imu_topic_textedit,
             self.ui.imu_type_label, self.ui.imu_type_textedit
         )
-        self.setSettingPannel(
+        self.setSettingPanel(
             self.lidarNetworkType,
             self.ui.lidar_ip_label, self.ui.lidar_ip_textedit,
             self.ui.lidar_port_label, self.ui.lidar_port_textedit,

@@ -1,6 +1,6 @@
 import socket
 import struct
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 
 
 class IMUConnector:
@@ -10,6 +10,7 @@ class IMUConnector:
     self.connChk = False
     self.recvChk = False
     self.event = Event()
+    self.lock = Lock()
 
     self.imu_data = IMUINFO()
   
@@ -44,30 +45,33 @@ class IMUConnector:
           
 
   def imuCB(self,data):
-    self.imu_data.orientation_x = data.orientation.x
-    self.imu_data.orientation_y = data.orientation.y
-    self.imu_data.orientation_z = data.orientation.z
-    self.imu_data.orientation_w = data.orientation.w
-    self.imu_data.angular_velocity_x = data.angular_velocity.x
-    self.imu_data.angular_velocity_y = data.angular_velocity.y
-    self.imu_data.angular_velocity_z = data.angular_velocity.z
-    self.imu_data.linear_acceleration_x = data.linear_acceleration.x
-    self.imu_data.linear_acceleration_y = data.linear_acceleration.y
-    self.imu_data.linear_acceleration_z = data.linear_acceleration.z
-
-    self.recvChk = True
+    with self.lock:
+      self.imu_data.orientation_x = data.orientation.x
+      self.imu_data.orientation_y = data.orientation.y
+      self.imu_data.orientation_z = data.orientation.z
+      self.imu_data.orientation_w = data.orientation.w
+      self.imu_data.angular_velocity_x = data.angular_velocity.x
+      self.imu_data.angular_velocity_y = data.angular_velocity.y
+      self.imu_data.angular_velocity_z = data.angular_velocity.z
+      self.imu_data.linear_acceleration_x = data.linear_acceleration.x
+      self.imu_data.linear_acceleration_y = data.linear_acceleration.y
+      self.imu_data.linear_acceleration_z = data.linear_acceleration.z
+      self.recvChk = True
   
   def disconnect(self):
     if self.networkType == 'UDP':
       if self.connChk:
         self.connChk = False
-        if self.imuRecvThread.is_alive():
+        if hasattr(self, 'imuRecvThread') and self.imuRecvThread.is_alive():
           self.event.set()
           self.imuRecvThread.join()
-        self.imuClient.close()
+        if self.imuClient:
+          self.imuClient.close()
+          self.imuClient = None
     else:
-      self.imuClient.unregister()
-      self.imuClient = None
+      if self.imuClient:
+        self.imuClient.unregister()
+        self.imuClient = None
 
   def imu(self):    
     while True:
@@ -80,18 +84,18 @@ class IMUConnector:
             
             data_length = struct.unpack('i', raw_data[9:13])
             data = struct.unpack('10d', raw_data[33:113])
-            self.imu_data.orientation_x = data[1]
-            self.imu_data.orientation_y = data[2]
-            self.imu_data.orientation_z = data[3]
-            self.imu_data.orientation_w = data[0]
-            self.imu_data.angular_velocity_x = data[4]
-            self.imu_data.angular_velocity_y = data[5]
-            self.imu_data.angular_velocity_z = data[6]
-            self.imu_data.linear_acceleration_x = data[7]
-            self.imu_data.linear_acceleration_y = data[8]
-            self.imu_data.linear_acceleration_z = data[9]
-            
-            self.recvChk = True
+            with self.lock:
+              self.imu_data.orientation_x = data[1]
+              self.imu_data.orientation_y = data[2]
+              self.imu_data.orientation_z = data[3]
+              self.imu_data.orientation_w = data[0]
+              self.imu_data.angular_velocity_x = data[4]
+              self.imu_data.angular_velocity_y = data[5]
+              self.imu_data.angular_velocity_z = data[6]
+              self.imu_data.linear_acceleration_x = data[7]
+              self.imu_data.linear_acceleration_y = data[8]
+              self.imu_data.linear_acceleration_z = data[9]
+              self.recvChk = True
 
       except socket.timeout:
         if self.recvChk:
@@ -105,6 +109,7 @@ class IMUConnector:
   def getIMU(self):
     return self.imu_data
 
+
 class IMUINFO :
   def __init__(self):
     self.orientation_x = None
@@ -117,8 +122,3 @@ class IMUINFO :
     self.linear_acceleration_x = None
     self.linear_acceleration_y = None
     self.linear_acceleration_z = None 
-
-
-
-  def getIMU(self):
-    return self.imu_data

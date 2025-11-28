@@ -1,5 +1,5 @@
 import socket
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 
 import pynmea2
 
@@ -11,6 +11,7 @@ class GPSConnector:
     self.connChk = False        
     self.recvChk = False
     self.event = Event()
+    self.lock = Lock()
 
     self.pos_x = 126.773287
     self.pos_y = 37.229319
@@ -44,22 +45,26 @@ class GPSConnector:
 
     self.connChk = True
 
-  def gpsCB(self,data):    
-    self.pos_x = data.longitude
-    self.pos_y = data.latitude
-    self.recvChk = True
+  def gpsCB(self,data):
+    with self.lock:
+      self.pos_x = data.longitude
+      self.pos_y = data.latitude
+      self.recvChk = True
 
   def disconnect(self):
     if self.networkType == 'UDP':
       if self.connChk:
         self.connChk = False
-        if self.gpsRecvThread.is_alive():
+        if hasattr(self, 'gpsRecvThread') and self.gpsRecvThread.is_alive():
           self.event.set()
           self.gpsRecvThread.join()
-        self.gpsClient.close()
-      
+        if self.gpsClient:
+          self.gpsClient.close()
+          self.gpsClient = None
     else:
-      self.gpsClient.unregister()
+      if self.gpsClient:
+        self.gpsClient.unregister()
+        self.gpsClient = None
     
 
   def position(self):
@@ -75,10 +80,10 @@ class GPSConnector:
 
         lats = gpgga.latitude
         longs = gpgga.longitude
-        self.pos_y = lats
-        self.pos_x = longs #longitude is negaitve
-
-        self.recvChk = True
+        with self.lock:
+          self.pos_y = lats
+          self.pos_x = longs #longitude is negaitve
+          self.recvChk = True
 
       except socket.timeout:
         if self.recvChk:
@@ -91,4 +96,5 @@ class GPSConnector:
 
 
   def getPose(self):
-    return (self.pos_x, self.pos_y)
+    with self.lock:
+      return (self.pos_x, self.pos_y)
