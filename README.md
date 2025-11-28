@@ -10,14 +10,14 @@ ROS1 Noetic has reached [end-of-life](https://www.ros.org/blog/noetic-eol/) and 
 
 ### System
 
-Our reference system for using these examples uses a Windows 10/11 PC running WSL2 with Ubuntu 20.04 installed. Note that we are using **Python 3.12** and above for our Windows sytem, but as Ubuntu 20.04 uses Python 3.8 by default, any python script that resides in the Ubuntu VM will be set for Python 3.8.
-
-Other system options are to use two separate machines outright, or to use Docker containers. However, these options have not been tested by MORAI.
+Our reference system for using these examples uses a Windows 10/11 PC running WSL2 with Ubuntu 20.04 installed. Note that we are using **Python 3.8** as Ubuntu 20.04 uses Python 3.8 by default. Considering Python 3.8 has also reached end-of-life, depending on when you are attempting to use this example script, you may need to use newer versions of Python.
 
 | Windows PC | Ubuntu VM (WSL2) |
 |---|---|
 | Windows 10/11 | Ubuntu 20.04 (ROS Noetic) |
-| Python 3.8+ | Python 3.8 |
+| Python 3.8 | Python 3.8 |
+
+Other system options are to use two separate machines outright, or to use Docker containers. However, these options have not been tested by MORAI.
 
 ### Dependencies
 
@@ -71,6 +71,10 @@ catkin_make
 source devel/setup.bash
 python3 src/sensor_example/morai_sensor_viewer.py
 ```
+
+## Limitations
+
+This example has not been tested for robustness and may crash upon encountering different exceptions. For example, once you start a connection with the UI, switching between connection methods (from ROS to UDP and vice-versa) can lead to the script crashing.
 
 ## Resources
 
