@@ -1,0 +1,26 @@
+{
+    "camera": {
+        "network_type": "UDP",
+        "ip": "172.21.52.162",
+        "port": "1232",
+        "topic": "/image_jpeg/compressed"
+    },
+    "gps": {
+        "network_type": "UDP",
+        "ip": "172.21.52.162",
+        "port": "1234",
+        "topic": "/gps"
+    },
+    "imu": {
+        "network_type": "UDP",
+        "ip": "172.21.52.162",
+        "port": "1236",
+        "topic": "/imu"
+    },
+    "lidar": {
+        "network_type": "UDP",
+        "ip": "172.21.52.162",
+        "port": "2368",
+        "topic": "/velodyne_points"
+    }
+}

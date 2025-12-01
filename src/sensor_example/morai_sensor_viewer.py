@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 
-import math
 import os
 import sys
+import platform
+
+if platform.system() == 'Linux':
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = ''
+    os.environ.pop('QT_QPA_PLATFORM_PLUGIN_PATH', None)
+
+    # If running over SSH without display, uncomment this:
+    # os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+
+import json
+import math
 from multiprocessing import freeze_support
 
 import cv2
@@ -62,6 +72,7 @@ class MainWindow(QtWidgets.QDialog):
         self.ui.setupUi(self)
 
         resourcePath = os.path.join(current_path, 'resource') + os.sep
+        self.config_file = os.path.join(current_path, 'sensor_config.json')
 
         self.mutex = QtCore.QMutex()
         self.setWindowIcon(QtGui.QIcon(resourcePath+'MORAIicon.png'))
@@ -107,6 +118,9 @@ class MainWindow(QtWidgets.QDialog):
         self.ui.imu_comboBox.currentIndexChanged.connect(self.updateUi)
         self.ui.lidar_comboBox.currentIndexChanged.connect(self.updateUi)
         
+        # Load saved configuration
+        self.loadConfig()
+        
         # Trigger once to set initial state
         self.updateUi()
 
@@ -149,6 +163,9 @@ class MainWindow(QtWidgets.QDialog):
     def connect(self):
         try:
             if not self.connected:
+                # Save current configuration before connecting
+                self.saveConfig()
+                
                 if self.cameraNetworkType == 'ROS' or self.gpsNetworkType == 'ROS' or self.imuNetworkType =='ROS' or self.lidarNetworkType == 'ROS':
                     try:
                         import rospy
@@ -168,6 +185,9 @@ class MainWindow(QtWidgets.QDialog):
                 self.imuManager.connect(self.imuIp, self.imuPort, self.imuTopic)
 
                 self.lidarManager = LIDARConnector()
+                # Move to main thread explicitly to prevent threading issues
+                self.lidarManager.moveToThread(QtWidgets.QApplication.instance().thread())
+                
                 # Connect LIDAR signals
                 self.lidarManager.pointCloudReady.connect(self.onLidarPointCloudReady)
                 self.lidarManager.connectionStatusChanged.connect(self.onLidarConnectionChanged)
@@ -226,6 +246,118 @@ class MainWindow(QtWidgets.QDialog):
             del (self.gpsManager)
             del (self.imuManager)
             del (self.lidarManager)
+
+    def saveConfig(self):
+        """Save current UI configuration to JSON file."""
+        try:
+            config = {
+                'camera': {
+                    'network_type': self.ui.camera_comboBox.currentText(),
+                    'ip': self.ui.camera_ip_textedit.toPlainText(),
+                    'port': self.ui.camera_port_textedit.toPlainText(),
+                    'topic': self.ui.camera_topic_textedit.toPlainText()
+                },
+                'gps': {
+                    'network_type': self.ui.gps_comboBox.currentText(),
+                    'ip': self.ui.gps_ip_textedit.toPlainText(),
+                    'port': self.ui.gps_port_textedit.toPlainText(),
+                    'topic': self.ui.gps_topic_textedit.toPlainText()
+                },
+                'imu': {
+                    'network_type': self.ui.imu_comboBox.currentText(),
+                    'ip': self.ui.imu_ip_textedit.toPlainText(),
+                    'port': self.ui.imu_port_textedit.toPlainText(),
+                    'topic': self.ui.imu_topic_textedit.toPlainText()
+                },
+                'lidar': {
+                    'network_type': self.ui.lidar_comboBox.currentText(),
+                    'ip': self.ui.lidar_ip_textedit.toPlainText(),
+                    'port': self.ui.lidar_port_textedit.toPlainText(),
+                    'topic': self.ui.lidar_topic_textedit.toPlainText()
+                }
+            }
+            
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=4)
+            print(f'Configuration saved to {self.config_file}')
+        except Exception as e:
+            print(f'Error saving configuration: {e}')
+
+    def loadConfig(self):
+        """Load configuration from JSON file and apply to UI."""
+        try:
+            if not os.path.exists(self.config_file):
+                print('No configuration file found, using defaults')
+                return
+            
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
+            
+            self.applyConfig(config)
+            print(f'Configuration loaded from {self.config_file}')
+        except Exception as e:
+            print(f'Error loading configuration: {e}')
+
+    def applyConfig(self, config):
+        """Apply loaded configuration to UI elements."""
+        try:
+            # Camera configuration
+            if 'camera' in config:
+                cam = config['camera']
+                if 'network_type' in cam:
+                    index = self.ui.camera_comboBox.findText(cam['network_type'])
+                    if index >= 0:
+                        self.ui.camera_comboBox.setCurrentIndex(index)
+                if 'ip' in cam:
+                    self.ui.camera_ip_textedit.setPlainText(cam['ip'])
+                if 'port' in cam:
+                    self.ui.camera_port_textedit.setPlainText(cam['port'])
+                if 'topic' in cam:
+                    self.ui.camera_topic_textedit.setPlainText(cam['topic'])
+            
+            # GPS configuration
+            if 'gps' in config:
+                gps = config['gps']
+                if 'network_type' in gps:
+                    index = self.ui.gps_comboBox.findText(gps['network_type'])
+                    if index >= 0:
+                        self.ui.gps_comboBox.setCurrentIndex(index)
+                if 'ip' in gps:
+                    self.ui.gps_ip_textedit.setPlainText(gps['ip'])
+                if 'port' in gps:
+                    self.ui.gps_port_textedit.setPlainText(gps['port'])
+                if 'topic' in gps:
+                    self.ui.gps_topic_textedit.setPlainText(gps['topic'])
+            
+            # IMU configuration
+            if 'imu' in config:
+                imu = config['imu']
+                if 'network_type' in imu:
+                    index = self.ui.imu_comboBox.findText(imu['network_type'])
+                    if index >= 0:
+                        self.ui.imu_comboBox.setCurrentIndex(index)
+                if 'ip' in imu:
+                    self.ui.imu_ip_textedit.setPlainText(imu['ip'])
+                if 'port' in imu:
+                    self.ui.imu_port_textedit.setPlainText(imu['port'])
+                if 'topic' in imu:
+                    self.ui.imu_topic_textedit.setPlainText(imu['topic'])
+            
+            # LIDAR configuration
+            if 'lidar' in config:
+                lidar = config['lidar']
+                if 'network_type' in lidar:
+                    index = self.ui.lidar_comboBox.findText(lidar['network_type'])
+                    if index >= 0:
+                        self.ui.lidar_comboBox.setCurrentIndex(index)
+                if 'ip' in lidar:
+                    self.ui.lidar_ip_textedit.setPlainText(lidar['ip'])
+                if 'port' in lidar:
+                    self.ui.lidar_port_textedit.setPlainText(lidar['port'])
+                if 'topic' in lidar:
+                    self.ui.lidar_topic_textedit.setPlainText(lidar['topic'])
+        except Exception as e:
+            print(f'Error applying configuration: {e}')
 
     def closeEvent(self, event):
         if self.connected:

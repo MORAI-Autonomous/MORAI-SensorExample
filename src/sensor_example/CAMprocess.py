@@ -1,7 +1,12 @@
+import os
+import platform
 import socket
 import struct
 import time
 from threading import Event, Lock, Thread
+
+if platform.system() == 'Linux':
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = ''
 
 import cv2
 import numpy as np
