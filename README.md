@@ -72,6 +72,12 @@ source devel/setup.bash
 python3 src/sensor_example/morai_sensor_viewer.py
 ```
 
+## Use
+
+Once the main script `morai_sensor_viewer.py` runs, use the UI to set the desired connection type and any relevant configurations.
+
+![sample_screen](./docs/sample_screen.png)
+
 ## Limitations
 
 This example has not been tested for robustness and may crash upon encountering different exceptions. For example, once you start a connection with the UI, switching between connection methods (from ROS to UDP and vice-versa) can lead to the script crashing.
@@ -84,7 +90,7 @@ This example has not been tested for robustness and may crash upon encountering 
   - [MORAI SIM Manual (Korean)](https://help-morai-sim.scrollhelp.site/)
 - **Quickstart Guide (EN)**:
   - [ROS Environment Setup](https://morai-sim-drive-user-manual-en-24-r2.scrollhelp.site/morai-sim-drive-user-manual-en-24.r2/Working-version/quick-start-guide-for-ros)
-  - [Data Sync Example](https://morai-sim-drive-user-manual-en-24-r2.scrollhelp.site/morai-sim-drive-user-manual-en-24.r2/Working-version/morai-sim-drive-for-ros)
+  - [Data Sync Example](https://morai-sim-drive-user-manual-en-24-r2.scrollhelp.site/morai-sim-drive-user-manual-en-24.r2/Working-version/morai-sim-examples-ros-udp)
 
 ## License and acknowledgements
 
