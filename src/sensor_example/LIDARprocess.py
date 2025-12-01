@@ -1,12 +1,12 @@
 import socket
-from multiprocessing import Queue
+from queue import Queue
 from threading import Event, Lock, Thread
 
 import numpy as np
-from PySide2.QtCore import QThread, Signal
+from PySide2.QtCore import QObject, Signal
 
 
-class LIDARConnector(QThread):
+class LIDARConnector(QObject):
     # Signals
     pointCloudReady = Signal(object, object, object, object)  # x, y, z, intensity
     connectionStatusChanged = Signal(bool)  # True=connected, False=disconnected
@@ -28,14 +28,14 @@ class LIDARConnector(QThread):
         self.x = None
         self.y = None
         self.z = None
-        self.Intensity = None
-        self.VerticalAngleDeg = np.array([[-30.67,-9.33,-29.33,-8.0,-28.0,-6.67,-26.67,-5.33,-25.33,-4,-24,-2.67,-22.67,-1.33,-21.33,
+        self.intensity = None
+        self.vertical_angle_deg = np.array([[-30.67,-9.33,-29.33,-8.0,-28.0,-6.67,-26.67,-5.33,-25.33,-4,-24,-2.67,-22.67,-1.33,-21.33,
                             0.0,-20.,1.33,-18.67,2.67,-17.33,4,-16,5.33,-14.67,6.67,-13.33,8,-12,9.33,-10.67,10.67]])
 
     def __del__(self):
         print("lidar_del")
 
-    def connect(self, networktype, host, port, topic):
+    def connect_sensor(self, networktype, host, port, topic):
         self.networkType = networktype
 
         if self.networkType == 'UDP':
@@ -79,7 +79,7 @@ class LIDARConnector(QThread):
         self.connChk = True
         self.connectionStatusChanged.emit(True)
 
-    def disconnect(self):
+    def disconnect_sensor(self):
         if self.networkType == 'UDP':
             if self.connChk:
                 self.connChk = False
@@ -148,34 +148,34 @@ class LIDARConnector(QThread):
     def data_parser(self):
         while 1:
             try:
-                Buffer= self.queue.get()
-                Buffer_np = np.frombuffer(Buffer, dtype=np.uint8).reshape([-1, 100])
+                buffer= self.queue.get()
+                buffer_np = np.frombuffer(buffer, dtype=np.uint8).reshape([-1, 100])
 
                 if self.channel == 16:
-                    Azimuth = np.zeros((24 * self.max_len,))
-                    Azimuth[0::2] = Buffer_np[:,2].astype(np.float32) + 256*Buffer_np[:,3].astype(np.float32)
-                    Azimuth[1::2] = Buffer_np[:,2].astype(np.float32) + 256*Buffer_np[:,3].astype(np.float32) + 20
+                    azimuth = np.zeros((24 * self.max_len,))
+                    azimuth[0::2] = buffer_np[:,2].astype(np.float32) + 256*buffer_np[:,3].astype(np.float32)
+                    azimuth[1::2] = buffer_np[:,2].astype(np.float32) + 256*buffer_np[:,3].astype(np.float32) + 20
                 else:
-                    Azimuth = Buffer_np[:,2] + 256*Buffer_np[:,3]
+                    azimuth = buffer_np[:,2] + 256*buffer_np[:,3]
 
-                Distance = (Buffer_np[:,4::3].astype(np.float32) + 256*Buffer_np[:,5::3].astype(np.float32))*2
-                Intensity = Buffer_np[:,6::3].astype(np.float32)
+                dist = (buffer_np[:,4::3].astype(np.float32) + 256*buffer_np[:,5::3].astype(np.float32))*2
+                intensity = buffer_np[:,6::3].astype(np.float32)
 
                 # reshape outputs based on 16 channels
-                Azimuth = Azimuth.reshape([-1, 1])/100
-                Distance = Distance.reshape([-1, self.channel])/1000
-                Intensity = Intensity.reshape([-1])
+                azimuth = azimuth.reshape([-1, 1])/100
+                dist = dist.reshape([-1, self.channel])/1000
+                intensity = intensity.reshape([-1])
 
-                x, y, z = self.sph2cart(Distance, Azimuth)
+                x, y, z = self.sph2cart(dist, azimuth)
                 with self.lock:
                     self.x = x
                     self.y = y
                     self.z = z
-                    self.Intensity = Intensity
+                    self.intensity = intensity
                     self.recvChk = True
                 
                 # Emit signals with point cloud data
-                self.pointCloudReady.emit(x, y, z, Intensity)
+                self.pointCloudReady.emit(x, y, z, intensity)
                 self.pointCountChanged.emit(len(x))
 
             except Exception as e :
@@ -184,11 +184,12 @@ class LIDARConnector(QThread):
                 self.connectionError.emit(error_msg)
 
     def sph2cart(self, R, a):
-        x = R * np.cos(np.deg2rad(self.VerticalAngleDeg)) * np.sin(np.deg2rad(a))
-        y = R * np.cos(np.deg2rad(self.VerticalAngleDeg)) * np.cos(np.deg2rad(a))
-        z = R * np.sin(np.deg2rad(self.VerticalAngleDeg))
+        x = R * np.cos(np.deg2rad(self.vertical_angle_deg)) * np.sin(np.deg2rad(a))
+        y = R * np.cos(np.deg2rad(self.vertical_angle_deg)) * np.cos(np.deg2rad(a))
+        z = R * np.sin(np.deg2rad(self.vertical_angle_deg))
         return x.reshape([-1]), y.reshape([-1]), z.reshape([-1])
 
-    def getLidar(self):
-        with self.lock:
-            return (self.x, self.y ,self.z, self.Intensity)
+    # NOTE: get method deprecated for Qt signals
+    # def getLidar(self):
+    #     with self.lock:
+    #         return (self.x, self.y ,self.z, self.intensity)

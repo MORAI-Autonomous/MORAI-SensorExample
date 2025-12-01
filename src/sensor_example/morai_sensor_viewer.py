@@ -1,5 +1,5 @@
-#! /bin/env python
-# This Python file uses the following encoding: utf-8
+#!/usr/bin/env python3
+
 import math
 import os
 import sys
@@ -90,6 +90,9 @@ class MainWindow(QtWidgets.QDialog):
         # Widget 3: Lidar 3D Scatterplot
         self.lidar_graph = None
         self.lidar_container = None
+        self.lidar_connected = False
+        self.lidar_point_count = 0
+        self.cached_lidar_data = None
 
         hLayout = QHBoxLayout(self.ui.pointcloudWidget)
         vLayout = QVBoxLayout()
@@ -97,7 +100,7 @@ class MainWindow(QtWidgets.QDialog):
         hLayout.addLayout(vLayout)
         
         # Initialize Lidar graph with delayed timer after window is shown and stable
-        # QtCore.QTimer.singleShot(500, self.initLidarGraph)
+        QtCore.QTimer.singleShot(500, self.initLidarGraph)
 
         self.ui.camera_comboBox.currentIndexChanged.connect(self.updateUi)
         self.ui.gps_comboBox.currentIndexChanged.connect(self.updateUi)
@@ -165,7 +168,12 @@ class MainWindow(QtWidgets.QDialog):
                 self.imuManager.connect(self.imuIp, self.imuPort, self.imuTopic)
 
                 self.lidarManager = LIDARConnector()
-                self.lidarManager.connect(self.lidarNetworkType,self.lidarIp,self.lidarPort,self.lidarTopic)
+                # Connect LIDAR signals
+                self.lidarManager.pointCloudReady.connect(self.onLidarPointCloudReady)
+                self.lidarManager.connectionStatusChanged.connect(self.onLidarConnectionChanged)
+                self.lidarManager.connectionError.connect(self.onLidarError)
+                self.lidarManager.pointCountChanged.connect(self.onLidarPointCountChanged)
+                self.lidarManager.connect_sensor(self.lidarNetworkType,self.lidarIp,self.lidarPort,self.lidarTopic)
 
                 #Verify that the connection is valid
                 if not self.cameraManager.connChk or \
@@ -212,7 +220,7 @@ class MainWindow(QtWidgets.QDialog):
             self.cameraManager.disconnect()
             self.gpsManager.disconnect()
             self.imuManager.disconnect()
-            self.lidarManager.disconnect()
+            self.lidarManager.disconnect_sensor()
 
             del (self.cameraManager)
             del (self.gpsManager)
@@ -230,7 +238,7 @@ class MainWindow(QtWidgets.QDialog):
                 if hasattr(self, 'imuManager'):
                     self.imuManager.disconnect()
                 if hasattr(self, 'lidarManager'):
-                    self.lidarManager.disconnect()
+                    self.lidarManager.disconnect_sensor()
             except Exception as e:
                 print(f'closeEvent cleanup error: {e}')
         super(QtWidgets.QDialog, self).closeEvent(event)
@@ -305,16 +313,17 @@ class MainWindow(QtWidgets.QDialog):
         if self.cameraManager.recvChk:
             self.updateImg()
 
-        if self.lidarManager.recvChk:
-            self.updateLidar()
+        # LIDAR updates are now handled by PySide signals here
+        if self.cached_lidar_data is not None:
+            self.updateLidarDisplay()
 
     def updateGps(self):
         self.gpsLon, self.gpsLat = self.gpsManager.getPose()
-        zoomLvl = 16
+        zoom_lvl = 16
         totImg = []
-        centerPose, vehiclePose = getTileNum(self.gpsLat, self.gpsLon, zoomLvl)
+        centerPose, vehiclePose = getTileNum(self.gpsLat, self.gpsLon, zoom_lvl)
         if (self.buffCenterPose is None) or (self.buffCenterPose != centerPose):
-            totImg = self.getMapBuff(centerPose, zoomLvl)
+            totImg = self.getMapBuff(centerPose, zoom_lvl)
             if totImg is None:
                 return
             self.buffMapTile = totImg
@@ -329,7 +338,7 @@ class MainWindow(QtWidgets.QDialog):
         self.mapScene.addPixmap(QPixmap.fromImage(qImg))
         return vehiclePose
 
-    def getMapBuff(self,centerPose, zoomLvl):
+    def getMapBuff(self, centerPose, zoom_level):
         rowTileNum = 3
         colTileNum = 3
 
@@ -337,7 +346,7 @@ class MainWindow(QtWidgets.QDialog):
         imgCol = []
         for i in range(rowTileNum):
             for j in range(colTileNum):
-                tmpImg = getTile(zoomLvl, centerPose[0]+i-1, centerPose[1]+j-1)
+                tmpImg = getTile(zoom_level, centerPose[0]+i-1, centerPose[1]+j-1)
 
                 if(tmpImg is None or len(tmpImg.content) < 500):
                     return
@@ -387,7 +396,6 @@ class MainWindow(QtWidgets.QDialog):
     def updateImg(self):
         try:
             camImg = self.cameraManager.getImg()
-            # camImg = cv2.resize(camImg,dsize=(400,400))  # redundant resize removed
             qtImg = self.convert_cv_qt(camImg)
             self.ui.CamView.setPixmap(qtImg)
         except Exception as e:
@@ -403,39 +411,92 @@ class MainWindow(QtWidgets.QDialog):
         p = convert_to_Qt_format.scaled(400, 400, Qt.KeepAspectRatio)
         return QPixmap.fromImage(p)
 
-    def updateLidar(self):
-        if self.lidar_graph is None:
+    def updateLidarDisplay(self):
+        """Update the LIDAR 3D visualization with cached data."""
+        if self.lidar_graph is None or self.cached_lidar_data is None:
             return
         try:
-            x,y,z,_ = self.lidarManager.getLidar()
+            x, y, z, _ = self.cached_lidar_data
+            if x is None or len(x) == 0:
+                return
+            
+            # Clear existing data
+            proxy = self.lidar_graph.seriesList()[0].dataProxy()
+            item_count = proxy.itemCount()
+            if item_count > 0:
+                proxy.removeItems(0, item_count)
+
+            step = 5
+            # Debug: Print data stats
+            # print(f"Displaying {len(x)//step} points. Range X: {np.min(x):.2f} to {np.max(x):.2f}")
+
             dataArray = []
-            for i in range(0,len(x),5):
-                itm = QtDataVisualization.QScatterDataItem(QVector3D(x[i],y[i],-z[i]))
+            for i in range(0, len(x), step):
+                if np.isnan(x[i]) or np.isnan(y[i]) or np.isnan(z[i]):
+                    continue
+                
+                # Create item and set position explicitly
+                itm = QtDataVisualization.QScatterDataItem()
+                itm.setPosition(QVector3D(float(x[i]), float(y[i]), float(-z[i])))
                 dataArray.append(itm)
 
-            self.lidar_graph.seriesList()[0].dataProxy().resetArray(dataArray)
+            if dataArray:
+                proxy.addItems(dataArray)
+            else:
+                print("Warning: No valid points to display")
 
         except Exception as e:
-            print(f'updateLidar Exception : {e}')
+            print(f'updateLidarDisplay Exception : {e}')
+
+    def onLidarPointCloudReady(self, x, y, z, intensity):
+        """Handle new point cloud data from LIDAR via Qt signal."""
+        self.cached_lidar_data = (x, y, z, intensity)
+        # The display will be updated in the next timer tick
+
+    def onLidarConnectionChanged(self, connected):
+        """Handle LIDAR connection status changes."""
+        self.lidar_connected = connected
+        status = "Connected" if connected else "Disconnected"
+        print(f"LIDAR {status}")
+
+    def onLidarError(self, error_msg):
+        """Handle LIDAR errors via Qt signal."""
+        print(f"LIDAR Error: {error_msg}")
+
+    def onLidarPointCountChanged(self, count):
+        """Handle point count updates from LIDAR."""
+        self.lidar_point_count = count
 
     def initLidarGraph(self):
         """Initialize the 3D LIDAR visualization graph."""
         try:
+            # Check if the window is actually visible and ready
+            if not self.isVisible():
+                QtCore.QTimer.singleShot(100, self.initLidarGraph)
+                return
+                
             self.lidar_graph = QtDataVisualization.Q3DScatter()
             
-            series = QtDataVisualization.QScatter3DSeries()
-            self.lidar_graph.addSeries(series)
+            # Force the graph to have a valid surface before continuing
+            self.lidar_graph.show()
+            QtWidgets.QApplication.processEvents()  # Process pending events
+            
+            self.series = QtDataVisualization.QScatter3DSeries()
+            self.lidar_graph.addSeries(self.series)
             self.lidar_graph.setShadowQuality(QtDataVisualization.QAbstract3DGraph.ShadowQualityNone)
             self.lidar_graph.setOrthoProjection(False)
-            self.lidar_graph.axisX().setRange(-50,50)
-            self.lidar_graph.axisY().setRange(-50,50)
+            self.lidar_graph.axisX().setRange(-100,100)
+            self.lidar_graph.axisY().setRange(-100,100)
             self.lidar_graph.axisZ().setRange(-30,30)
 
             self.lidar_graph.scene().activeCamera().setZoomLevel(300)
             self.lidar_graph.scene().activeCamera().setYRotation(-20)
             self.lidar_graph.activeTheme().setGridEnabled(False)
+            
+            # Use MeshPoint for better performance with point clouds
             self.lidar_graph.seriesList()[0].setMesh(QtDataVisualization.QAbstract3DSeries.MeshPoint)
             self.lidar_graph.seriesList()[0].setItemSize(0.025)
+            self.lidar_graph.seriesList()[0].setBaseColor(QColor(255, 0, 0))
             
             # Store container as instance variable to prevent garbage collection
             self.lidar_container = QWidget.createWindowContainer(self.lidar_graph, self)
@@ -443,6 +504,7 @@ class MainWindow(QtWidgets.QDialog):
             
             # Add to the layout we saved earlier
             self.graph_container_layout.addWidget(self.lidar_container, 1)
+
         except Exception as e:
             print(f"ERROR: LIDAR 3D visualization failed to initialize: {e}")
             # Add placeholder on failure
@@ -455,14 +517,8 @@ class MainWindow(QtWidgets.QDialog):
 
 if __name__ == "__main__":
     freeze_support()
-    
-    # Use software rendering to avoid OpenGL crashes with QtDataVisualization
-    os.environ["QT_OPENGL"] = "software"
-    os.environ["QSG_RHI_BACKEND"] = "software"
-    
     # Enable OpenGL context sharing (required for QtDataVisualization)
-    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
-    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseSoftwareOpenGL)
+    QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 
     app = QtWidgets.QApplication(sys.argv)
     
