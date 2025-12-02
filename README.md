@@ -48,6 +48,8 @@ The main runtime dependencies are listed in `requirements.txt`, but are now supe
 - opencv-python==4.11.0.86
 - pynmea2==1.19.0
 - pyside2==5.15.2.1
+- pyvista>=0.44.2
+- pyvistaqt>=0.11.3
 - requests==2.32.4
 
 ### Alternative with pip (without uv):

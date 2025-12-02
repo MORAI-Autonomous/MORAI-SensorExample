@@ -18,6 +18,8 @@ from multiprocessing import freeze_support
 import cv2
 import numpy as np
 import requests
+import pyvista as pv
+from pyvistaqt import QtInteractor
 from CAMprocess import CAMConnector
 from form_ui import Ui_main_window
 from GPSprocess import GPSConnector
@@ -25,9 +27,8 @@ from IMUprocess import IMUConnector
 from LIDARprocess import LIDARConnector
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtCore import Qt
-from PySide2.QtDataVisualization import QtDataVisualization
-from PySide2.QtGui import QBrush, QColor, QImage, QPen, QPixmap, QVector3D
-from PySide2.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide2.QtGui import QBrush, QColor, QImage, QPen, QPixmap
+from PySide2.QtWidgets import QVBoxLayout
 
 
 current_path = os.path.dirname(os.path.realpath(__file__))
@@ -98,17 +99,24 @@ class MainWindow(QtWidgets.QDialog):
         self.gpsLat = 0
         self.gpsLon = 0
 
-        # Widget 3: Lidar 3D Scatterplot
-        self.lidar_graph = None
-        self.lidar_container = None
+        # Widget 3: Lidar 3D pointcloud with PyVista
+        # hierarchy: lidar_plotter > lidar_actor > lidar_mesh
+        self.lidar_plotter = None
+        self.lidar_actor = None
+        self.lidar_mesh = None
+
+        # lidar data and status
         self.lidar_connected = False
         self.lidar_point_count = 0
         self.cached_lidar_data = None
+        self.new_lidar_data = False
+        pv.global_theme.allow_empty_mesh = True
 
-        hLayout = QHBoxLayout(self.ui.pointcloudWidget)
-        vLayout = QVBoxLayout()
-        self.graph_container_layout = hLayout
-        hLayout.addLayout(vLayout)
+        # Setup layout for LIDAR widget - clear any existing layout
+        if self.ui.lidar_frame.layout():
+            QtWidgets.QWidget().setLayout(self.ui.lidar_frame.layout())
+        
+        self.graph_container_layout = QVBoxLayout(self.ui.lidar_frame)
         
         # Initialize Lidar graph with delayed timer after window is shown and stable
         QtCore.QTimer.singleShot(500, self.initLidarGraph)
@@ -174,7 +182,7 @@ class MainWindow(QtWidgets.QDialog):
                         QtWidgets.QMessageBox.critical(self, "Error", "ROS (rospy) module not found.")
                         return
 
-                #Sensor Connect
+                # Sensor Connect
                 self.cameraManager = CAMConnector(self.cameraNetworkType)
                 self.cameraManager.connect(self.cameraIp, self.cameraPort, self.cameraTopic)
 
@@ -195,7 +203,7 @@ class MainWindow(QtWidgets.QDialog):
                 self.lidarManager.pointCountChanged.connect(self.onLidarPointCountChanged)
                 self.lidarManager.connect_sensor(self.lidarNetworkType,self.lidarIp,self.lidarPort,self.lidarTopic)
 
-                #Verify that the connection is valid
+                # Verify that the connection is valid
                 if not self.cameraManager.connChk or \
                     not self.gpsManager.connChk or \
                         not self.imuManager.connChk or \
@@ -232,7 +240,6 @@ class MainWindow(QtWidgets.QDialog):
             else:
                 self.connected = False
                 self.timer.stop()
-                print('Disconnected')
                 self.ui.ConnectButton.setText('Connect')
                 raise NetworkError
 
@@ -439,15 +446,19 @@ class MainWindow(QtWidgets.QDialog):
             if self.imuManager.recvChk:
                 self.updateImu(vehiclePose)
             else:
-                self.mapScene.addEllipse(vehiclePose[0]-5, vehiclePose[1]-5, 10,10,self.mapEgoColor, \
+                # no heading info
+                self.mapScene.addEllipse(
+                    vehiclePose[0]-5,
+                    vehiclePose[1]-5,
+                    10,
+                    10,
+                    self.mapEgoColor,
                     QBrush(self.mapEgoColor.color()))
 
         if self.cameraManager.recvChk:
             self.updateImg()
 
-        # LIDAR updates are now handled by PySide signals here
-        if self.cached_lidar_data is not None:
-            self.updateLidarDisplay()
+        # LIDAR updates are now handled directly via signals
 
     def updateGps(self):
         self.gpsLon, self.gpsLat = self.gpsManager.getPose()
@@ -544,46 +555,63 @@ class MainWindow(QtWidgets.QDialog):
         return QPixmap.fromImage(p)
 
     def updateLidarDisplay(self):
-        """Update the LIDAR 3D visualization with cached data."""
-        if self.lidar_graph is None or self.cached_lidar_data is None:
+        """Update the LIDAR 3D visualization with cached data using PyVista."""
+        if not self.new_lidar_data:
             return
+            
+        if self.lidar_plotter is None or self.cached_lidar_data is None:
+            return
+            
+        self.new_lidar_data = False
+        
         try:
-            x, y, z, _ = self.cached_lidar_data
+            x, y, z, intensity = self.cached_lidar_data
             if x is None or len(x) == 0:
+                print("Warning: Empty LIDAR data received")
                 return
             
-            # Clear existing data
-            proxy = self.lidar_graph.seriesList()[0].dataProxy()
-            item_count = proxy.itemCount()
-            if item_count > 0:
-                proxy.removeItems(0, item_count)
-
+            # Convert lists to numpy arrays if needed
+            x = np.array(x) if not isinstance(x, np.ndarray) else x
+            y = np.array(y) if not isinstance(y, np.ndarray) else y
+            z = np.array(z) if not isinstance(z, np.ndarray) else z
+            
+            # Remove NaN values
+            valid_mask = ~(np.isnan(x) | np.isnan(y) | np.isnan(z))
+            x = x[valid_mask]
+            y = y[valid_mask]
+            z = z[valid_mask]
+            
+            # Downsample for performance (every 5th point)
             step = 5
-            # Debug: Print data stats
-            # print(f"Displaying {len(x)//step} points. Range X: {np.min(x):.2f} to {np.max(x):.2f}")
-
-            dataArray = []
-            for i in range(0, len(x), step):
-                if np.isnan(x[i]) or np.isnan(y[i]) or np.isnan(z[i]):
-                    continue
-                
-                # Create item and set position explicitly
-                itm = QtDataVisualization.QScatterDataItem()
-                itm.setPosition(QVector3D(float(x[i]), float(y[i]), float(-z[i])))
-                dataArray.append(itm)
-
-            if dataArray:
-                proxy.addItems(dataArray)
-            else:
-                print("Warning: No valid points to display")
-
+            x = x[::step]
+            y = y[::step]
+            z = z[::step]
+            
+            # Create point cloud
+            points = np.column_stack((x, y, -z))  # Note: negating z to match previous orientation
+            point_cloud = pv.PolyData(points)
+            
+            # Add intensity as scalar data if available
+            if intensity is not None:
+                intensity_array = np.array(intensity) if not isinstance(intensity, np.ndarray) else intensity
+                intensity_array = intensity_array[valid_mask][::step]
+                if len(intensity_array) == len(points):
+                    point_cloud['intensity'] = intensity_array
+            
+            # Update the existing mesh in-place using shallow_copy
+            if self.lidar_mesh is not None:
+                self.lidar_mesh.shallow_copy(point_cloud)
+            
+            self.lidar_plotter.render()
+            
         except Exception as e:
             print(f'updateLidarDisplay Exception : {e}')
 
     def onLidarPointCloudReady(self, x, y, z, intensity):
         """Handle new point cloud data from LIDAR via Qt signal."""
         self.cached_lidar_data = (x, y, z, intensity)
-        # The display will be updated in the next timer tick
+        self.new_lidar_data = True
+        self.updateLidarDisplay()
 
     def onLidarConnectionChanged(self, connected):
         """Handle LIDAR connection status changes."""
@@ -600,42 +628,40 @@ class MainWindow(QtWidgets.QDialog):
         self.lidar_point_count = count
 
     def initLidarGraph(self):
-        """Initialize the 3D LIDAR visualization graph."""
+        """Initialize the 3D LIDAR visualization with PyVista."""
         try:
-            # Check if the window is actually visible and ready
-            if not self.isVisible():
-                QtCore.QTimer.singleShot(100, self.initLidarGraph)
-                return
-                
-            self.lidar_graph = QtDataVisualization.Q3DScatter()
+            # Create PyVista plotter widget
+            self.lidar_plotter = QtInteractor(self.ui.lidar_frame)
             
-            # Force the graph to have a valid surface before continuing
-            self.lidar_graph.show()
-            QtWidgets.QApplication.processEvents()  # Process pending events
+            # Add to the layout FIRST before any other configuration
+            self.graph_container_layout.addWidget(self.lidar_plotter, 1)
             
-            self.series = QtDataVisualization.QScatter3DSeries()
-            self.lidar_graph.addSeries(self.series)
-            self.lidar_graph.setShadowQuality(QtDataVisualization.QAbstract3DGraph.ShadowQualityNone)
-            self.lidar_graph.setOrthoProjection(False)
-            self.lidar_graph.axisX().setRange(-100,100)
-            self.lidar_graph.axisY().setRange(-100,100)
-            self.lidar_graph.axisZ().setRange(-30,30)
+            # Set size to fill the entire parent widget
+            self.lidar_plotter.resize(400, 400)
+            self.lidar_plotter.setMinimumSize(QtCore.QSize(400, 400))
+            self.lidar_plotter.setMaximumSize(QtCore.QSize(400, 400))
+            
+            # Configure the plotter
+            self.lidar_plotter.set_background('black')
+            self.lidar_plotter.show_axes()
+            
+            # Set initial camera position
+            self.lidar_plotter.camera_position = [
+                (0, -150, 50),  # camera position
+                (0, 0, 0),      # focal point
+                (0, 0, 1)       # view up
+            ]
 
-            self.lidar_graph.scene().activeCamera().setZoomLevel(300)
-            self.lidar_graph.scene().activeCamera().setYRotation(-20)
-            self.lidar_graph.activeTheme().setGridEnabled(False)
-            
-            # Use MeshPoint for better performance with point clouds
-            self.lidar_graph.seriesList()[0].setMesh(QtDataVisualization.QAbstract3DSeries.MeshPoint)
-            self.lidar_graph.seriesList()[0].setItemSize(0.025)
-            self.lidar_graph.seriesList()[0].setBaseColor(QColor(255, 0, 0))
-            
-            # Store container as instance variable to prevent garbage collection
-            self.lidar_container = QWidget.createWindowContainer(self.lidar_graph, self)
-            self.lidar_container.setMaximumSize(QtCore.QSize(400,400))
-            
-            # Add to the layout we saved earlier
-            self.graph_container_layout.addWidget(self.lidar_container, 1)
+            # Keep a mesh object to update
+            self.lidar_mesh = pv.PolyData()
+            self.lidar_actor = self.lidar_plotter.add_mesh(
+                self.lidar_mesh,
+                color='red',
+                point_size=3.0,
+                render_points_as_spheres=False,
+                name='lidar_points',
+                reset_camera=False
+            )
 
         except Exception as e:
             print(f"ERROR: LIDAR 3D visualization failed to initialize: {e}")
@@ -643,8 +669,8 @@ class MainWindow(QtWidgets.QDialog):
             placeholder_label = QtWidgets.QLabel("LIDAR 3D View\n(Initialization failed)")
             placeholder_label.setAlignment(QtCore.Qt.AlignCenter)
             placeholder_label.setStyleSheet("background-color: #333; color: #ff6b6b; font-size: 12pt;")
-            placeholder_label.setMaximumSize(QtCore.QSize(400,400))
-            self.graph_container_layout.addWidget(placeholder_label, 1)
+            placeholder_label.setMaximumSize(QtCore.QSize(400, 400))
+            self.graph_container_layout.addWidget(placeholder_label)
 
 
 if __name__ == "__main__":
