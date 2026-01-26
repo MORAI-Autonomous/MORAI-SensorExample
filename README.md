@@ -66,7 +66,7 @@ python src\sensor_example\morai_sensor_viewer.py
 1) Download and build our custom morai_msgs for ROS1
 
 2) Setup the project in a new install path
-```
+```bash
 cd {example install path}/MORAI-SensorExample
 pip install -r requirements.txt
 catkin_make
@@ -78,11 +78,21 @@ python3 src/sensor_example/morai_sensor_viewer.py
 
 Once the main script `morai_sensor_viewer.py` runs, use the UI to set the desired connection type and any relevant configurations.
 
+Also recall that there are two different bash files that must be sourced for each terminal - one from the ROS install folder, and one from the morai_msgs install folder.
+```bash
+source /opt/ros/noetic/setup.bash
+source ~/MORAI-SensorExample/devel/setup.bash  # change path as required
+```
+
 ![sample_screen](./docs/sample_screen.png)
 
-## Limitations
+## Limitations and troubleshooting
 
 This example has not been tested for robustness and may crash upon encountering different exceptions. For example, once you start a connection with the UI, switching between connection methods (from ROS to UDP and vice-versa) can lead to the script crashing.
+
+If the UI appears unresponsive, restarting the script will resolve most sporadic issues.
+
+There have been instances when users have difficulty running the sensor viewer due to conflicts with the Qt libraries used by the Pyside and PyVista libraries. A `starter.sh` script shows one possible solution to hard-wiring library dependencies to fix conflict issues.
 
 ## Resources
 

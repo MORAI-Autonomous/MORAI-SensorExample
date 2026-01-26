@@ -177,10 +177,14 @@ class MainWindow(QtWidgets.QDialog):
                 if self.cameraNetworkType == 'ROS' or self.gpsNetworkType == 'ROS' or self.imuNetworkType =='ROS' or self.lidarNetworkType == 'ROS':
                     try:
                         import rospy
-                        rospy.init_node('morai_sensor_viewer',anonymous=True)
+                        # Check if the node is already initialized to prevent crashing on reconnect
+                        if not rospy.core.is_initialized():
+                            rospy.init_node('morai_sensor_viewer', anonymous=True)
                     except ImportError:
                         QtWidgets.QMessageBox.critical(self, "Error", "ROS (rospy) module not found.")
                         return
+                    except rospy.exceptions.ROSException as e:
+                        print(f"ROS Initialization warning: {e}")
 
                 # Sensor Connect
                 self.cameraManager = CAMConnector(self.cameraNetworkType)
