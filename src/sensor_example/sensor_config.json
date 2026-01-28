@@ -21,6 +21,6 @@
         "network_type": "UDP",
         "ip": "172.21.52.162",
         "port": "2368",
-        "topic": "/velodyne_points"
+        "topic": "/lidar3D"
     }
 }
